@@ -39,10 +39,9 @@ PubSubClient client(espClient);
 unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE  (50)
 char msg[MSG_BUFFER_SIZE];
-int value = 0;
 
 int WifiTimeout = 15000; //Tiempo dedicado a conectarte a las redes
-
+int distancia;
 //----------------------------------------------SETUP---------------------------------------------------------//
 
 void setup() {
@@ -67,30 +66,17 @@ void loop() {
     reconnect();
   }
   client.loop();
-  int x = PorcentajeTanque();
-  //PrintPorcentaje(x);
-  
-//  long now = millis();
-//  if (now - lastMsg > 1000) {
-//    lastMsg = now; 
-//
-//    // Convert the value to a char array
-//    char publishArray[8];
-//    dtostrf(x, 1, 2, publishArray);
-//    Serial.print("Porcentaje: ");
-//    Serial.println(publishArray);
-//    client.publish(topicString, publishArray);
-//  }
+  int porcent = PorcentajeTanque();
+  //PrintMediciones(x);
   
   unsigned long now = millis();
   if (now - lastMsg > 1000) {
     lastMsg = now;
-    //++value;
-    snprintf (msg, MSG_BUFFER_SIZE, "%ld%%", x);
-//    Serial.print("Publish message: ");
-//    Serial.print(msg);
-//    Serial.print(" to topic: ");
-//    Serial.println(topicString);
+    snprintf (msg, MSG_BUFFER_SIZE, "%ld%%", porcent);
+    Serial.print("Publish message: ");
+    Serial.print(msg);
+    Serial.print(" to topic: ");
+    Serial.println(topicString);
     
     client.publish(topicString, msg);
   }         
@@ -159,9 +145,6 @@ String getValue(String data, char separator, int index) //Para MQTT
 //Para MQTT
 void callback(char* topic, byte* payload, unsigned int length) { //Recibe los mensajes un caracter a la vez, los une
   String message = "";
-  String r;
-  String g;
-  String b;
 
   Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
   for (int i = 0; i < length; i++) {
@@ -172,21 +155,12 @@ void callback(char* topic, byte* payload, unsigned int length) { //Recibe los me
 
   String thistopic = String(topic);
 
-  // Los mensajes deberan llegar de la forma "rgb(rrr, ggg, bbb)"
+
   if (thistopic == topicString) {
 
-    r = getValue(message, ',', 0); //Separa lo primero hasta la primer coma
-    //targetRed = r.substring(4).toInt(); //Reconoce a partir del caracter 4
-
-    g = getValue(message, ',', 1); //Separa lo restante hasta la segunda coma
-    //targetGreen = g.toInt();
-
-    b = getValue(message, ',', 2); //Separa lo restante hasta el paréntesis final
-    b = getValue(b, ')', 0);
+    //r = getValue(message, ',', 0); //Separa lo primero hasta la primer coma
     //targetBlue = b.toInt();
 
-    //targetN = 0; //Parche temporal que resultó permanente
-    
   }
 }
 
@@ -215,7 +189,7 @@ void reconnect() {
 }
 
 int PorcentajeTanque(void){
-  unsigned int tiempo, distancia;
+  unsigned int tiempo;
   
   //Medición ultrasónico
   digitalWrite(pintrigger, LOW);
@@ -225,9 +199,6 @@ int PorcentajeTanque(void){
   digitalWrite(pintrigger, LOW);
   tiempo = pulseIn(pinecho, HIGH);
   distancia = tiempo*0.034/2; //Constante de la velocidad del sonido
-  
-  Serial.print(distancia); //Imprime la medición actual
-  Serial.println(" cm");
 
   float rango = distMax - distMin;
   int porcentaje = 100 - (distancia - distMin)*(100/rango);
@@ -235,8 +206,10 @@ int PorcentajeTanque(void){
   
 }
 
-void PrintPorcentaje(int x){
-   
+void PrintMediciones(int x){
+  Serial.print("Medicion: ");
+  Serial.print(distancia); //Imprime la medición actual
+  Serial.println(" cm");
   Serial.print("Porcentaje actual del tanque: ");
   Serial.print(x);
   Serial.println("%");
