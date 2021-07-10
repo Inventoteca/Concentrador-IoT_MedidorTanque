@@ -49,73 +49,55 @@ void setup() {
   
   pinMode(pinecho, INPUT); //US
   pinMode(pintrigger, OUTPUT); //US}
-  pinMode(LED_BUILTIN, OUTPUT); 
+  
+  Serial.println("Hola!");
   
   setupWifi();
   
-  delay(500);
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
-}
 
-//----------------------------------------------LOOP---------------------------------------------------------//
-
-void loop() {
-  
   if (!client.connected()) {
     reconnect();
   }
   client.loop();
   int porcent = PorcentajeTanque();
+  if(porcent<0) //Salen números negativos cuando se mide demasiado cerca
+  {
+    delay(200);
+    porcent = PorcentajeTanque(); //Volver a hacer la medición si salió mal
+  }
   //PrintMediciones(x);
+
+  //Envío por MQTT
+  snprintf (msg, MSG_BUFFER_SIZE, "%ld%%", porcent);
+  Serial.print("Publish message: ");
+  Serial.print(msg);
+  Serial.print(" to topic: ");
+  Serial.println(topicString);
+  client.publish(topicString, msg);
+
+  Serial.println("adios!");
+  ESP.deepSleep(54e6);
   
-  unsigned long now = millis();
-  if (now - lastMsg > 1000) {
-    lastMsg = now;
-    snprintf (msg, MSG_BUFFER_SIZE, "%ld%%", porcent);
-    Serial.print("Publish message: ");
-    Serial.print(msg);
-    Serial.print(" to topic: ");
-    Serial.println(topicString);
-    
-    client.publish(topicString, msg);
-  }         
+}
+
+//----------------------------------------------LOOP---------------------------------------------------------//
+
+void loop() {         
 }
 
 //----------------------------------------OTRAS FUNCIONES-------------------------------------------------------//
 
 void setupWifi() {
 
-  //Modo AP
-  WiFi.softAPConfig(ip, ip, netmask); // configure ip address for softAP 
-  WiFi.softAP(ssid, pw); // configure ssid and password for softAP
-  //server.begin(); // start TCP server
-  Serial.println((String)"SSID: " + ssid + "  PASS: " + pw);
-  Serial.println((String)"Connect to " + ip.toString() + ":" + port);
-  Serial.println("");
-
   // Connect to Wi-Fi network with SSID and password
   Serial.print("Connecting to ");
   Serial.println(ssidSTA1);
   WiFi.begin(ssidSTA1, passwordSTA1);
   while (WiFi.status() != WL_CONNECTED) { //Minibucle para revisar conexiones WiFi
-    delay(500);
     Serial.print(".");
-    if(millis()>=WifiTimeout) {
-      Serial.println("Failed to connect to STA1");
-      Serial.print("Connecting to ");
-      Serial.println(ssidSTA2);
-      WiFi.begin(ssidSTA2, passwordSTA2);
-      while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-        if(millis()>=WifiTimeout*2) {
-          Serial.println("Failed to connect to STA2");
-          Serial.println("Vamonos al void loop().");
-          return;
-        }
-      }
-    }
+    delay(100);
   }
   
   // Print local IP address
@@ -123,7 +105,6 @@ void setupWifi() {
   Serial.println("WiFi conectado.");
   Serial.println("Direccion IP: ");
   Serial.println(WiFi.localIP());
-  delay(500);
 }
 
 String getValue(String data, char separator, int index) //Para MQTT
@@ -142,26 +123,26 @@ String getValue(String data, char separator, int index) //Para MQTT
 
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
-//Para MQTT
+////Para MQTT
 void callback(char* topic, byte* payload, unsigned int length) { //Recibe los mensajes un caracter a la vez, los une
-  String message = "";
-
-  Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-    message += (char)payload[i];
-  }
-  Serial.println();
-
-  String thistopic = String(topic);
-
-
-  if (thistopic == topicString) {
-
-    //r = getValue(message, ',', 0); //Separa lo primero hasta la primer coma
-    //targetBlue = b.toInt();
-
-  }
+//  String message = "";
+//
+//  Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
+//  for (int i = 0; i < length; i++) {
+//    Serial.print((char)payload[i]);
+//    message += (char)payload[i];
+//  }
+//  Serial.println();
+//
+//  String thistopic = String(topic);
+//
+//
+//  if (thistopic == topicString) {
+//
+//    //r = getValue(message, ',', 0); //Separa lo primero hasta la primer coma
+//    //targetBlue = b.toInt();
+//
+//  }
 }
 
 void reconnect() {
@@ -174,16 +155,12 @@ void reconnect() {
     // Attempt to connect
     if (client.connect(clientId.c_str())) {
       Serial.println("connected");
-//      // Once connected, publish an announcement...
-//      client.publish("outTopic", "hello world");
-//      // ... and resubscribe
-//      client.subscribe("inTopic");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
       // Wait 5 seconds before retrying
-      delay(5000);
+      delay(3000); //!
     }
   }
 }
