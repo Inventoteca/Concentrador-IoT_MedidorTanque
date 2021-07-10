@@ -1,6 +1,7 @@
 /* 
  *Código para lectura de un tanque de agua y envío de 
- *la información por MQTT a un servidor preseleccionado
+ *la información por MQTT a un servidor preseleccionado 
+ *usando DeepSleep para minimizar consumo
 */
 
 #include <ESP8266WiFi.h>
@@ -10,19 +11,9 @@
 //Modo STA
 const char* ssidSTA1 = "Inventoteca_2G";
 const char* passwordSTA1 = "science_7425";
-const char* ssidSTA2     = "Inventoteca_2G"; //Por default, todos los dispositivos siempre podrán conectarse a Invento
-const char* passwordSTA2 = "science_7425";
-//Modo AP
-const char *ssid = "SensorTanque_01";  // Generará esta red como Access Point
-const char *pw = "12345678"; // con esta contraseña
-IPAddress ip(192, 168, 0, 1); // Se asignará esta IP desde el Access Point
-IPAddress netmask(255, 255, 255, 0);
-const int port = 1881; // y este puerto
-
 //Configuración MQTT
-const char* mqtt_server = "broker.mqtt-dashboard.com";
-//const char*  topicString = "Inventoteca/IoT/SensorAgua";
-const char*  topicString = "neoNumber";
+const char* mqtt_server = "iot.inventoteca.com";
+const char* topicString = "ConcentradorIoT/Sensores/NivelAgua";
 
 //Configuración Ultrasonico
 const int pinecho = 4;
@@ -33,6 +24,7 @@ const int pintrigger = 5;
 int distMin=17; //Calibrar esto de acuerdo al tamaño del tanque de agua con medidas en cm,
 int distMax=120; //se puede obtener de la lectura del sensor en puerto serial
 
+unsigned long int tiempo_dormido = 2e6; //tiempo en microsegundos
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -40,51 +32,67 @@ unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE  (50)
 char msg[MSG_BUFFER_SIZE];
 
-int WifiTimeout = 15000; //Tiempo dedicado a conectarte a las redes
-int distancia;
+int distancia, loopCounter = 0;
 //----------------------------------------------SETUP---------------------------------------------------------//
 
 void setup() {
   Serial.begin(115200);
-  
   pinMode(pinecho, INPUT); //US
-  pinMode(pintrigger, OUTPUT); //US}
-  
-  Serial.println("Hola!");
-  
+  pinMode(pintrigger, OUTPUT); //US
   setupWifi();
-  
+  //MQTT
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
-
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-  int porcent = PorcentajeTanque();
-  if(porcent<0) //Salen números negativos cuando se mide demasiado cerca
-  {
-    delay(200);
-    porcent = PorcentajeTanque(); //Volver a hacer la medición si salió mal
-  }
-  //PrintMediciones(x);
-
-  //Envío por MQTT
-  snprintf (msg, MSG_BUFFER_SIZE, "%ld%%", porcent);
-  Serial.print("Publish message: ");
-  Serial.print(msg);
-  Serial.print(" to topic: ");
-  Serial.println(topicString);
-  client.publish(topicString, msg);
-
-  Serial.println("adios!");
-  ESP.deepSleep(54e6);
   
 }
 
 //----------------------------------------------LOOP---------------------------------------------------------//
 
-void loop() {         
+void loop() {      
+  
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  
+  int porcent = PorcentajeTanque(); //La primer medición es BASURA
+  porcent = PorcentajeTanque(); //Repetir medición
+  
+  if(porcent<0 || porcent>600) //Volver a hacer la medición si salió mal
+  {
+    delay(200);
+    porcent = PorcentajeTanque(); 
+    if(porcent<0 || porcent>600) //Volver a hacer la medición si salió mal
+      {
+        delay(200);
+        porcent = PorcentajeTanque(); 
+      }  
+  }
+  
+  PrintMediciones(porcent);
+  
+//  Envío por MQTT
+  snprintf (msg, MSG_BUFFER_SIZE, "%ld", porcent);
+  Serial.print("Publish message: ");
+  Serial.print(msg);
+  Serial.print(" to topic: ");
+  Serial.println(topicString);
+    client.publish(topicString, msg);
+    client.publish(topicString, msg);
+    client.publish(topicString, msg);
+ 
+
+
+  if(loopCounter == 5){
+    //Irse a dormir
+    Serial.print("a dormir por ");
+    Serial.print(tiempo_dormido/1000000);
+    Serial.println("s");
+    ESP.deepSleep(tiempo_dormido); //Bye bye  
+  }
+
+  loopCounter++;
+   
 }
 
 //----------------------------------------OTRAS FUNCIONES-------------------------------------------------------//
@@ -95,7 +103,7 @@ void setupWifi() {
   Serial.print("Connecting to ");
   Serial.println(ssidSTA1);
   WiFi.begin(ssidSTA1, passwordSTA1);
-  while (WiFi.status() != WL_CONNECTED) { //Minibucle para revisar conexiones WiFi
+  while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(100);
   }
@@ -176,7 +184,15 @@ int PorcentajeTanque(void){
   digitalWrite(pintrigger, LOW);
   tiempo = pulseIn(pinecho, HIGH);
   distancia = tiempo*0.034/2; //Constante de la velocidad del sonido
-
+//
+//  Serial.print("time: ");
+//  Serial.print(tiempo); //Imprime la medición actual
+//  Serial.println(" s");
+//  
+//  Serial.print("Mediciooon: ");
+//  Serial.print(distancia); //Imprime la medición actual
+//  Serial.println(" cm");
+  
   float rango = distMax - distMin;
   int porcentaje = 100 - (distancia - distMin)*(100/rango);
   return porcentaje;
@@ -184,9 +200,7 @@ int PorcentajeTanque(void){
 }
 
 void PrintMediciones(int x){
-  Serial.print("Medicion: ");
-  Serial.print(distancia); //Imprime la medición actual
-  Serial.println(" cm");
+
   Serial.print("Porcentaje actual del tanque: ");
   Serial.print(x);
   Serial.println("%");
