@@ -27,7 +27,7 @@ const int pintrigger = 5;
 int distMin=17; //Calibrar esto de acuerdo al tamaño del tanque de agua con medidas en cm,
 int distMax=120; //se puede obtener de la lectura del sensor en puerto serial
 
-unsigned long int tiempo_dormido = 2e6; //tiempo en microsegundos
+unsigned long int tiempo_dormido = 55e6; //tiempo en microsegundos
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -41,8 +41,20 @@ ESP8266WebServer httpServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
 
 
+//RTC
+#define RTCMEMORYSTART 65
+#define MAXHOUR 10000// number of hours to deep sleep for
+extern "C" {
+#include "user_interface.h"
+}
+typedef struct {
+  int count;
+} rtcStore;
+rtcStore rtcMem;
+
+String MAC = WiFi.macAddress();
 int distancia, loopCounter = 0;
-ADC_MODE(ADC_VCC);
+ADC_MODE(ADC_VCC); //Para leer voltaje de la pila
 //----------------------------------------------SETUP---------------------------------------------------------//
 
 void setup() {
@@ -59,6 +71,7 @@ void setup() {
   httpUpdater.setup(&httpServer);
   httpServer.begin();
   MDNS.addService("http", "tcp", 80);
+  Serial.printf("HTTPUpdateServer ready! Open http://%s.local/update in your browser\n", host);
  
 }
 
@@ -72,8 +85,11 @@ void loop() {
   client.loop();
 
   //OTA
+  //while(true){
   httpServer.handleClient(); 
-  
+  MDNS.update();    
+  //}
+ 
   
   int porcent = PorcentajeTanque(); //La primer medición es BASURA
   porcent = PorcentajeTanque(); //Repetir medición
@@ -98,10 +114,8 @@ void loop() {
   Serial.print(" to topic: ");
   Serial.println(topicString);
   client.publish(topicString, msg);
-  
-  snprintf (msg, MSG_BUFFER_SIZE, "%ld", loopCounter);
-  client.publish("ConcentradorIoT/Sensores/Contador", msg);
 
+  //Para saber el voltaje de la pila
   float volt = ESP.getVcc()/1000.0;
   Serial.print("Vcc read: ");
   Serial.print(volt);
@@ -109,15 +123,28 @@ void loop() {
   snprintf (msg, MSG_BUFFER_SIZE, "%.2f", volt);
   client.publish("ConcentradorIoT/Sensores/Volt", msg);
 
-  loopCounter++;
+  //Para saber cuántos ciclos ha realizado
+  int counter = readFromRTCMemory();
+  snprintf (msg, MSG_BUFFER_SIZE, "%ld", counter);
+  client.publish("ConcentradorIoT/Sensores/Contador", msg);
 
-  if(loopCounter == 10){
+  //Para saber que está vivo y cuál es su MAC address
+  int str_len = MAC.length() + 1;
+  MAC.toCharArray(msg, str_len);
+  client.publish("ConcentradorIoT/Alive", msg);
+  
+  loopCounter++; //Se usa un bucle porque necesitas mandar más de una vez los valores por MQTT para que sí lleguen, aparentemente
+
+  if(loopCounter == 7){
+    writeToRTCMemory();
     //Irse a dormir
     Serial.print("a dormir por ");
     Serial.print(tiempo_dormido/1000000);
     Serial.println("s");
     ESP.deepSleep(tiempo_dormido); //Bye bye  
   }
+
+  delay(1000);
 }
 
 //----------------------------------------OTRAS FUNCIONES-------------------------------------------------------//
@@ -138,6 +165,8 @@ void setupWifi() {
   Serial.println("WiFi conectado.");
   Serial.println("Direccion IP: ");
   Serial.println(WiFi.localIP());
+  Serial.print("MAC: ");
+  Serial.println(WiFi.macAddress());
 }
 
 String getValue(String data, char separator, int index) //Para MQTT
@@ -230,4 +259,24 @@ void PrintMediciones(int x){
   Serial.print(x);
   Serial.println("%");
   Serial.println("");
+}
+
+int readFromRTCMemory() {
+  system_rtc_mem_read(RTCMEMORYSTART, &rtcMem, sizeof(rtcMem));
+
+  Serial.print("count = ");
+  Serial.println(rtcMem.count);
+  yield();
+  return rtcMem.count;
+}
+
+void writeToRTCMemory() {
+  if (rtcMem.count <= MAXHOUR) {
+    rtcMem.count++;
+  } else {
+    rtcMem.count = 0;
+  }
+
+  system_rtc_mem_write(RTCMEMORYSTART, &rtcMem, 4);
+  yield();
 }
