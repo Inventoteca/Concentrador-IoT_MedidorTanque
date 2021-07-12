@@ -5,6 +5,9 @@
 */
 
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
 #include <PubSubClient.h>
 
 // Ajustar de acuerdo a tu red WiFi
@@ -32,7 +35,14 @@ unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE  (50)
 char msg[MSG_BUFFER_SIZE];
 
+//OTA
+const char* host = "esp8266-webupdate";
+ESP8266WebServer httpServer(80);
+ESP8266HTTPUpdateServer httpUpdater;
+
+
 int distancia, loopCounter = 0;
+ADC_MODE(ADC_VCC);
 //----------------------------------------------SETUP---------------------------------------------------------//
 
 void setup() {
@@ -43,17 +53,27 @@ void setup() {
   //MQTT
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
-  
+
+  //OTA
+  MDNS.begin(host);
+  httpUpdater.setup(&httpServer);
+  httpServer.begin();
+  MDNS.addService("http", "tcp", 80);
+ 
 }
 
 //----------------------------------------------LOOP---------------------------------------------------------//
 
 void loop() {      
-  
+  //MQTT
   if (!client.connected()) {
     reconnect();
   }
   client.loop();
+
+  //OTA
+  httpServer.handleClient(); 
+  
   
   int porcent = PorcentajeTanque(); //La primer medición es BASURA
   porcent = PorcentajeTanque(); //Repetir medición
@@ -71,28 +91,33 @@ void loop() {
   
   PrintMediciones(porcent);
   
-//  Envío por MQTT
+  //Envío por MQTT
   snprintf (msg, MSG_BUFFER_SIZE, "%ld", porcent);
   Serial.print("Publish message: ");
   Serial.print(msg);
   Serial.print(" to topic: ");
   Serial.println(topicString);
-    client.publish(topicString, msg);
-    client.publish(topicString, msg);
-    client.publish(topicString, msg);
- 
+  client.publish(topicString, msg);
+  
+  snprintf (msg, MSG_BUFFER_SIZE, "%ld", loopCounter);
+  client.publish("ConcentradorIoT/Sensores/Contador", msg);
 
+  float volt = ESP.getVcc()/1000.0;
+  Serial.print("Vcc read: ");
+  Serial.print(volt);
+  Serial.println("V");
+  snprintf (msg, MSG_BUFFER_SIZE, "%.2f", volt);
+  client.publish("ConcentradorIoT/Sensores/Volt", msg);
 
-  if(loopCounter == 5){
+  loopCounter++;
+
+  if(loopCounter == 10){
     //Irse a dormir
     Serial.print("a dormir por ");
     Serial.print(tiempo_dormido/1000000);
     Serial.println("s");
     ESP.deepSleep(tiempo_dormido); //Bye bye  
   }
-
-  loopCounter++;
-   
 }
 
 //----------------------------------------OTRAS FUNCIONES-------------------------------------------------------//
