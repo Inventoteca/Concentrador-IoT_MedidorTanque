@@ -8,20 +8,24 @@
 */
 
 #include <LoRaNow.h>
+#define LORA_CS 2 //chip select del módulo LoRa (RFM95W)
+#define LORA_G0 15 //DIO 0
+#define LORA_EN 4 //enable
+// Otros pines se comparten con el módulo MAX6675 (puerto SPI)
+// SCK 14
+// MISO 12
+// MOSI 13
 
 #include <max6675.h>
-#define DO  12 //salida de datos del termocople
+#define DO 12 //MISO (salida de datos)
 #define SCK 14 //reloj
-#define CS 2 //chip selectdel termocople
+#define CS 5 //chip select
 MAX6675 termo(SCK, CS, DO);
-// El inicio del archivo max6675.cpp se modificó para funcionar con ESP8266
+// En una versión anterior de la librería se modificó el archivo max6675.cpp para funcionar con ESP8266
 // https://github.com/adafruit/MAX6675-library/issues/9
 // línea 8 agregada #define _delay_ms(ms) delayMicroseconds((ms) * 1000)
 // línea 10 comentada //#include <util/delay.h>
-
-uint64_t t; //tiempo actual (millis)
-uint64_t tLectura = 0; //momento de hacer lectura
-unsigned int p = 3000; //periodo entre lecturas
+// En la versión más reciente (julio 2021) ya no es necesario
 
 void setup() {
   //Serial.begin(115200);
@@ -35,48 +39,61 @@ void setup() {
 
   // LoRaNow.setFrequency(frequency);
   // LoRaNow.setSpreadingFactor(sf);
+
   // LoRaNow.setPins(ss, dio0);
+  // Pines por defecto en ESP8266: ss-GPIO16-D0, dio0-GPIO15-D8
+  // Debemos dejar libre el GPIO16 para usar deepSleep
+  // Quedan disponibles GPIO 2, 4 y 5
   //LoRaNow.setPins(D4, D8); //pines disponibles en módulo para pila 18650
+  LoRaNow.setPins(LORA_CS, LORA_G0);
 
   // LoRaNow.setPinsSPI(sck, miso, mosi, ss, dio0); // Only works with ESP32
+
+  // Leer temperatura (grados Celcius)
+  float tem = termo.readCelsius();
+  Serial.print("C = ");
+  Serial.println(tem);
 
   if (!LoRaNow.begin()) {
     Serial.println("LoRa init failed. Check your connections.");
     while (true);
   }
 
-  LoRaNow.onMessage(onMessage);
-  LoRaNow.onSleep(onSleep);
-  LoRaNow.showStatus(Serial);
+  // ¿Qué pasa si no asignamos las siguientes funciones?
+  //LoRaNow.onMessage(onMessage);
+  //LoRaNow.onSleep(onSleep);
+  //LoRaNow.showStatus(Serial);
 
-  tLectura = millis(); //inicializar
+  // Enviar lectura
+  LoRaNow.print(tem);
+  LoRaNow.send();
+
+  // Entra en modo sueño profundo
+  ESP.deepSleep(10e6);
 }
 
 void loop() {
   LoRaNow.loop();
-
-  t = millis(); //leer tiempo actual
-  if (t >= tLectura) {
-    Serial.print("C = ");
-    Serial.println(termo.readCelsius());
-    tLectura += p; //sumar periodo
-  }
 }
 
-void onMessage(uint8_t *buffer, size_t size)
-{
+/*
+  void onMessage(uint8_t *buffer, size_t size)
+  {
   Serial.print("onMessage: ");
   Serial.write(buffer, size);
   Serial.println();
   Serial.println();
-}
+  }
+*/
 
-void onSleep()
-{
+/*
+  void onSleep()
+  {
   Serial.println("onSleep");
   delay(5000); // "kind of a sleep"
-  Serial.println("Send Message");
-  LoRaNow.print("LoRaNow Node Message ");
-  LoRaNow.print(millis());
-  LoRaNow.send();
-}
+  //Serial.println("Send Message");
+  //LoRaNow.print("LoRaNow Node Message ");
+  //LoRaNow.print(millis());
+  //LoRaNow.send();
+  }
+*/
