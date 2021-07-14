@@ -27,7 +27,13 @@ MAX6675 termo(SCK, CS, DO);
 // línea 10 comentada //#include <util/delay.h>
 // En la versión más reciente (julio 2021) ya no es necesario
 
+// Todo ocurre dentro de la función setup
+// No se necesitan otros eventos porque
 void setup() {
+  // Iniciar con módulo LoRa desactivado
+  pinMode(LORA_EN, OUTPUT);
+  digitalWrite(LORA_EN, 0);
+
   //Serial.begin(115200);
   Serial.begin(74880);
   Serial.println("LoRaNow Nodo con termocople");
@@ -47,6 +53,7 @@ void setup() {
   //LoRaNow.setPins(D4, D8); //pines disponibles en módulo para pila 18650
   LoRaNow.setPins(LORA_CS, LORA_G0);
 
+
   // LoRaNow.setPinsSPI(sck, miso, mosi, ss, dio0); // Only works with ESP32
 
   // Leer temperatura (grados Celcius)
@@ -54,6 +61,8 @@ void setup() {
   Serial.print("C = ");
   Serial.println(tem);
 
+  // Activar módulo LoRa
+  digitalWrite(LORA_EN, 1);
   if (!LoRaNow.begin()) {
     Serial.println("LoRa init failed. Check your connections.");
     while (true);
