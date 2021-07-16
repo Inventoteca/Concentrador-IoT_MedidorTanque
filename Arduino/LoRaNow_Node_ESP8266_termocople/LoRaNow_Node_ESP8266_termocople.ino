@@ -1,11 +1,37 @@
 /*
-  LoRaNow Simple Node
+  LoRaNow Node con termocople
 
-  This code sends message and listen expecting some valid message from the gateway
+  Este código envía lecturas de temperatura.
+  Hardware: ESP8266, RFM95W, Termocople con MAX6675
 
-  created 01 04 2019
-  by Luiz H. Cassettari
+  El nodo debe tener un id único. Para generarlo tenemos estas opciones:
+  Usar la dirección MAC
+  Usar el id generado por la biblioteca LoRaNow.
+    Este id se genera con la func. makeId(). Es un entero de 32 bits
+    En el ESP8266 se usa el chip id, obtenido con la func. ESP.getChipId()
+    Podría no ser único, pero sirve por ahora
+    https://github.com/esp8266/Arduino/issues/921
+    https://bbs.espressif.com/viewtopic.php?t=1303
+
+    ESP.getEfuseMac() solo funciona en ESP32
+    WiFi.macAddress()
+
+  La librería LoRaNow envía 3 componentes en cada mensaje:
+  1. Payload
+  2. 
+  
+  El gateway reenvía los mensajes recibidos por MQTT. Usa tópicos con esta forma
+  "concentrador/ESPXXXXXX/magnitud"
+  La palabra concentrador no cambia
+  El id comienza con ESP y XXXXXX son los 3 bytes finales de la MAC en formato hexadecimal
+  Por último va el nombre de la magnitud que se está leyendo. Ej.: temperatura, humedad, distancia, etc.
+
+  Es posible recibir mensajes del gateway, pero no está implementado.
+
+  Basado en ejemplo LoRaNow_Node (LoRaNow) [by Luiz H. Cassettari]
 */
+
+//#include <ESP8266WiFi.h> //para obtener la dirección MAC
 
 #include <LoRaNow.h>
 #define LORA_CS 2 //chip select del módulo LoRa (RFM95W)
@@ -27,8 +53,9 @@ MAX6675 termo(SCK, CS, DO);
 // línea 10 comentada //#include <util/delay.h>
 // En la versión más reciente (julio 2021) ya no es necesario
 
-// Todo ocurre dentro de la función setup
-// No se necesitan otros eventos porque
+// Todo ocurre dentro de la función setup()
+// No se necesitan otros eventos porque el chip 
+// entra en modo Deep Sleep y luego se reinicia.
 void setup() {
   // Iniciar con módulo LoRa desactivado
   pinMode(LORA_EN, OUTPUT);
@@ -37,6 +64,22 @@ void setup() {
   //Serial.begin(115200);
   Serial.begin(74880);
   Serial.println("LoRaNow Nodo con termocople");
+
+  // Comparar chipId y MAC
+  // La dirección MAC usa 6 bytes
+  // El chipId está formado por los 3 últimos bytes de la MAC
+  /*
+  uint32_t chipId = ESP.getChipId();
+  byte mac[6];
+  WiFi.macAddress(mac);
+  Serial.println(chipId, HEX);
+  Serial.print(mac[0], HEX);
+  Serial.print(mac[1], HEX);
+  Serial.print(mac[2], HEX);
+  Serial.print(mac[3], HEX);
+  Serial.print(mac[4], HEX);
+  Serial.println(mac[5], HEX);
+  */
 
   // LoRaNow.setFrequencyCN(); // Select the frequency 486.5 MHz - Used in China
   // LoRaNow.setFrequencyEU(); // Select the frequency 868.3 MHz - Used in Europe

@@ -3,12 +3,22 @@
 
   Probado en Heltec WiFi LoRa 32 V2
   https://heltec.org/project/wifi-lora-32/
-  
-  Recibe mensajes de nodos LoRa y los publica por MQTT
+
+  Recibe mensajes de nodos LoRa y los publica por MQTT.
+  El tópico en el que publica es de esta forma
+  "concentrador/ESPXXXXXX/magnitud"
+  La palabra concentrador no cambia
+  El id comienza con ESP y XXXXXX son los 3 bytes finales de la MAC del
+    nodo en formato hexadecimal. El id de cada número sería único.
+  Por último va el nombre de la magnitud que se está leyendo.
+    Ej.: temperatura, humedad, distancia, etc.
+
+  Al conectarse publica en el tópico "concentrador/status"
+  Por ahora no se suscribe a un tópico.
 
   Se conecta automáticamente a la red de Inventoteca,
-  pero en el futuro deberá generar una red WiFi para conectar
-  otro dispositivo y hacer la configuración inicial.
+  pero en el futuro deberá generar una red WiFi para
+  configurar y poder conectarse a otra red.
 
   Basado en estos ejemplos:
     LoRaNow_Gateway_ESP32 (LoraNow) [by Luiz H. Cassettari]
@@ -18,13 +28,6 @@
 #include <WiFi.h>
 #include <LoRaNow.h>
 #include <PubSubClient.h>
-
-// Por ahora no se necesita un server
-//#include <WebServer.h>
-//#include <StreamString.h>
-//WebServer server(80);
-//static StreamString string;
-//const char *script = "<script>function loop() {var resp = GET_NOW('loranow'); var area = document.getElementById('area').value; document.getElementById('area').value = area + resp; setTimeout('loop()', 1000);} function GET_NOW(get) { var xmlhttp; if (window.XMLHttpRequest) xmlhttp = new XMLHttpRequest(); else xmlhttp = new ActiveXObject('Microsoft.XMLHTTP'); xmlhttp.open('GET', get, false); xmlhttp.send(); return xmlhttp.responseText; }</script>";
 
 // La red de Inventoteca (esto debe ser configurable desde una app)
 const char *ssid = "Inventoteca_2G";
@@ -44,7 +47,7 @@ void setup(void)
   Serial.begin(115200);
 
   WiFi.mode(WIFI_STA); //modo cliente
-  //if (ssid != "") //ya sabemos que no está vacía
+  //if (ssid != "") //(ya sabemos que no es una cadena vacía)
   WiFi.begin(ssid, password); //conectar a la red
   WiFi.begin();
   Serial.println();
@@ -69,11 +72,6 @@ void setup(void)
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 
-  //server.on("/", handleRoot);
-  //server.on("/loranow", handleLoRaNow);
-  //server.begin();
-  //Serial.println("HTTP server started");
-
   // LoRaNow.setFrequencyCN(); // Select the frequency 486.5 MHz - Used in China
   // LoRaNow.setFrequencyEU(); // Select the frequency 868.3 MHz - Used in Europe
   LoRaNow.setFrequencyUS(); // Select the frequency 904.1 MHz - Used in USA, Canada and South America
@@ -93,19 +91,22 @@ void setup(void)
       ;
   }
 
+  // Asignar función que se ejecuta cuando llega un mensaje
   LoRaNow.onMessage(onMessage);
+  // Indicar que este dispositivo es un gateway
   LoRaNow.gateway();
 }
 
 void loop(void)
 {
-  LoRaNow.loop();
-  //server.handleClient();
-  
   if (!client.connected()) {
     reconnect();
   }
   client.loop();
+
+  LoRaNow.loop();
+  //server.handleClient();
+  //¿Qué se debe hacer si llegan mensajes por LoRa y no hay conexión WiFi?
 }
 
 // Función que se ejecuta cuando llega un mensaje por MQTT
@@ -118,15 +119,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
-
-  // Switch on the LED if an 1 was received as first character
-  if ((char)payload[0] == '1') {
-    digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
-    // but actually the LED is on; this is because
-    // it is active low on the ESP-01)
-  } else {
-    digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
-  }
 }
 
 // Función que se ejecuta cuando llega un mensaje por LoRa
@@ -145,31 +137,16 @@ void onMessage(uint8_t *buffer, size_t size)
   Serial.println();
   Serial.println();
 
-  /*
-    if (string.available() > 512)
-    {
-    while (string.available())
-    {
-      string.read();
-    }
-    }
-  */
-  /*
-    string.print("Node Id: ");
-    string.println(id, HEX);
-    string.print("Count: ");
-    string.println(count);
-    string.print("Message: ");
-    string.write(buffer, size);
-    string.println();
-    string.println();
-  */
-
-  // Send data to the node
+  // Enviar datos al nodo
   LoRaNow.clear();
-  LoRaNow.print("LoRaNow Gateway Message ");
+  //LoRaNow.print("LoRaNow Gateway Message ");
   LoRaNow.print(millis());
   LoRaNow.send();
+
+  // Plubicar mensaje recibido por MQTT
+  // Armar el tópico
+  char topic [50];
+  sprintf(topic, "concentrador/ESP%X/%s", id, 
 }
 
 // Función para reconectarse a WiFi
@@ -179,15 +156,15 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    String clientId = "ESP8266Client-";
+    String clientId = "ESP32Client-";
     clientId += String(random(0xffff), HEX);
     // Attempt to connect
     if (client.connect(clientId.c_str())) {
       Serial.println("connected");
       // Once connected, publish an announcement...
-      client.publish("outTopic", "hello world");
+      client.publish("concentrador/status", "conectado");
       // ... and resubscribe
-      client.subscribe("inTopic");
+      //client.subscribe("inTopic");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -201,6 +178,20 @@ void reconnect() {
 /////////////////////////////
 //// CÓDIGO NO UTILIZADO ////
 /////////////////////////////
+
+// Inicio del programa
+// Por ahora no se necesita un server
+//#include <WebServer.h>
+//#include <StreamString.h>
+//WebServer server(80);
+//static StreamString string;
+//const char *script = "<script>function loop() {var resp = GET_NOW('loranow'); var area = document.getElementById('area').value; document.getElementById('area').value = area + resp; setTimeout('loop()', 1000);} function GET_NOW(get) { var xmlhttp; if (window.XMLHttpRequest) xmlhttp = new XMLHttpRequest(); else xmlhttp = new ActiveXObject('Microsoft.XMLHTTP'); xmlhttp.open('GET', get, false); xmlhttp.send(); return xmlhttp.responseText; }</script>";
+
+// setup()
+//server.on("/", handleRoot);
+//server.on("/loranow", handleLoRaNow);
+//server.begin();
+//Serial.println("HTTP server started");
 
 /*
   void handleRoot()
@@ -231,4 +222,37 @@ void reconnect() {
     string.read();
   }
   }
+*/
+
+// callback()
+// Switch on the LED if an 1 was received as first character
+/*
+  if ((char)payload[0] == '1') {
+  digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
+  // but actually the LED is on; this is because
+  // it is active low on the ESP-01)
+  } else {
+  digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
+  }
+*/
+
+// onMessage()
+/*
+    if (string.available() > 512)
+    {
+    while (string.available())
+    {
+      string.read();
+    }
+    }
+*/
+/*
+  string.print("Node Id: ");
+  string.println(id, HEX);
+  string.print("Count: ");
+  string.println(count);
+  string.print("Message: ");
+  string.write(buffer, size);
+  string.println();
+  string.println();
 */
