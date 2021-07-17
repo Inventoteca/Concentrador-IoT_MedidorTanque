@@ -18,7 +18,11 @@
 
   La librería LoRaNow envía 3 componentes en cada mensaje:
   1. Payload
-  2. 
+  2. ID
+  3. Count
+  La variable count incrementa cuando se envía un mensaje
+  (línea 500 en LoRaNow.cpp). Se debe modificar la librería para enviar
+  un valor almacenado en la RTC memory.
   
   El gateway reenvía los mensajes recibidos por MQTT. Usa tópicos con esta forma
   "concentrador/ESPXXXXXX/magnitud"
@@ -32,11 +36,12 @@
 */
 
 //#include <ESP8266WiFi.h> //para obtener la dirección MAC
+ADC_MODE(ADC_VCC); //esto es para leer el voltaje de entrada con el ADC
 
 #include <LoRaNow.h>
 #define LORA_CS 2 //chip select del módulo LoRa (RFM95W)
 #define LORA_G0 15 //DIO 0
-#define LORA_EN 4 //enable
+#define LORA_EN 4 //enable (este pin solo está disponible en el módulo de Adafruit)
 // Otros pines se comparten con el módulo MAX6675 (puerto SPI)
 // SCK 14
 // MISO 12
@@ -96,13 +101,16 @@ void setup() {
   //LoRaNow.setPins(D4, D8); //pines disponibles en módulo para pila 18650
   LoRaNow.setPins(LORA_CS, LORA_G0);
 
-
   // LoRaNow.setPinsSPI(sck, miso, mosi, ss, dio0); // Only works with ESP32
 
   // Leer temperatura (grados Celcius)
   float tem = termo.readCelsius();
   Serial.print("C = ");
   Serial.println(tem);
+
+  // Leer voltaje de alimentación (VCC)
+  float vcc = ESP.getVcc();
+  vcc *= 3.283 / 3514.0; //Factor de conversión a volts
 
   // Activar módulo LoRa
   digitalWrite(LORA_EN, 1);
@@ -117,7 +125,10 @@ void setup() {
   //LoRaNow.showStatus(Serial);
 
   // Enviar lectura
+  LoRaNow.print("temperatura=");
   LoRaNow.print(tem);
+  LoRaNow.print(",vcc=");
+  LoRaNow.print(vcc);
   LoRaNow.send();
 
   // Entra en modo sueño profundo
