@@ -12,6 +12,12 @@
     nodo en formato hexadecimal. El id de cada número sería único.
   Por último va el nombre de la magnitud que se está leyendo.
     Ej.: temperatura, humedad, distancia, etc.
+  Es posible que lleguen varias lecturas en un solo mensaje,
+  entonces, se separan usando la función strtok()
+  https://www.cplusplus.com/reference/cstring/strtok/
+
+  Artículo sobre buenas prácticas en tópicos de MQTT
+  https://www.hivemq.com/blog/mqtt-essentials-part-5-mqtt-topics-best-practices/
 
   Al conectarse publica en el tópico "concentrador/status"
   Por ahora no se suscribe a un tópico.
@@ -32,7 +38,8 @@
 // La red de Inventoteca (esto debe ser configurable desde una app)
 const char *ssid = "Inventoteca_2G";
 const char *password = "science_7425";
-const char* mqtt_server = "broker.mqtt-dashboard.com";
+const char* mqtt_server = "iot.inventoteca.com";
+//"broker.mqtt-dashboard.com";
 
 // Variables para MQTT
 WiFiClient espClient;
@@ -137,16 +144,29 @@ void onMessage(uint8_t *buffer, size_t size)
   Serial.println();
   Serial.println();
 
+  // Plubicar mensaje recibido por MQTT
+  // Armar el tópico o los tópicos
+  // La cadena de entrada es *buffer
+  char topic [50]; //cadena para guardar el nombre del tópico
+  char *ptok; //pointer a un token o sub-string
+  ptok = strtok((char*)buffer, "=,"); //obtener primer token (nombre de una magnitud)
+  while (ptok != NULL)
+  {
+    // Tópico con id y nombre de magnitud
+    sprintf(topic, "concentrador/ESP%lX/%s", id, ptok);
+    // Extraer valor
+    ptok = strtok(NULL, "=,");
+    // Publicar por MQTT
+    client.publish(topic, ptok);
+    // Obtener siguiente nombre de magnitud
+    ptok = strtok(NULL, "=,");
+  }
+
   // Enviar datos al nodo
   LoRaNow.clear();
   //LoRaNow.print("LoRaNow Gateway Message ");
   LoRaNow.print(millis());
   LoRaNow.send();
-
-  // Plubicar mensaje recibido por MQTT
-  // Armar el tópico
-  char topic [50];
-  sprintf(topic, "concentrador/ESP%X/%s", id, 
 }
 
 // Función para reconectarse a WiFi
