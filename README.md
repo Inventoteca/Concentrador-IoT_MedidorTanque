@@ -1,9 +1,10 @@
 # Concentrador-IoT_MedidorTanque
 Repo para almacenar avances de programación para el medidor IoT para tanques de agua.
 
-Se están construyendo 2 disppositivos:  
+Se están construyendo 3 disppositivos:  
 El primero es un medidor de nivel de agua para un contenedor. Usa un sensor ultrasónico a prueba de agua.  
 El segundo es un medidor de temperatura. Usa un termopar con módulo MAX6675.  
+El tercero es el gateway
 
 Componentes de los dispositivos  
 + ESP8266 (módulo ESP-07)
@@ -56,3 +57,25 @@ Código extra
 + Programa para Serverus instalado en la puerta de sala 1. Usa MQTT.
 + Programa para Serverus que se instalará en granja de impresoras.
   Usa 2 termocoples y comuicación MQTT.
+
+## Notas
+Los mensajes enviados por LoRa llevan 3 componentes:  
++ Payload
++ Id del nodo
++ Contador
+
+El payload reporta varias lecturas. Se propone este formato  
+`magnitud1=valor1,magnitud2=valor2`  
+Por ejemplo, el nodo que mide temperatura envía un payload de esta forma  
+`vcc=3.21,temperatura=28`  
+
+El gateway recibe el mensaje por LoRa y lo reenvía al servidor de Inventoteca por MQTT.  
+El mensaje LoRa se separa con la función strtok  
+https://www.cplusplus.com/reference/cstring/strtok/  
+
+Otras funciones útiles  
+https://www.cplusplus.com/reference/cstdio/sprintf/  
+https://www.cplusplus.com/reference/cstdio/printf/  
+
+Una mejor forma de enviar los mensajes podría ser con formato JSON RPC  
+https://www.jsonrpc.org/specification  
