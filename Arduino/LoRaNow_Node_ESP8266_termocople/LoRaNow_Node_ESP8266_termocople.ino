@@ -13,6 +13,8 @@
     https://github.com/esp8266/Arduino/issues/921
     https://bbs.espressif.com/viewtopic.php?t=1303
 
+    https://arduino-esp8266.readthedocs.io/en/latest/libraries.html#esp-specific-apis
+
     ESP.getEfuseMac() solo funciona en ESP32
     WiFi.macAddress()
 
@@ -37,6 +39,7 @@
 
 //#include <ESP8266WiFi.h> //para obtener la dirección MAC
 ADC_MODE(ADC_VCC); //esto es para leer el voltaje de entrada con el ADC
+#define T_SLEEP 5*60e6 //tiempo que permanece en Deep Sleep (microsegundos) [5 minutos]
 
 #include <LoRaNow.h>
 #define LORA_CS 2 //chip select del módulo LoRa (RFM95W)
@@ -69,6 +72,9 @@ void setup() {
   //Serial.begin(115200);
   Serial.begin(74880);
   Serial.println("LoRaNow Nodo con termocople");
+  
+  //Serial.println(RF_DISABLED);
+  //Serial.println(WAKE_RF_DISABLED);
 
   // Comparar chipId y MAC
   // La dirección MAC usa 6 bytes
@@ -131,8 +137,10 @@ void setup() {
   LoRaNow.print(vcc);
   LoRaNow.send();
 
-  // Entra en modo sueño profundo
-  ESP.deepSleep(10e6);
+  // Entra en modo sueño profundo y deshabilitar WiFi
+  ESP.deepSleep(T_SLEEP, WAKE_RF_DISABLED);
+  //Existe otra constante con el mismo valor
+  //WAKE_RF_DISABLED = RF_DISABLED = 4
 }
 
 void loop() {
