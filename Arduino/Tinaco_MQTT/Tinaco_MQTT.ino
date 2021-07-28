@@ -1,14 +1,18 @@
-/* 
- *Código para lectura de un tanque de agua y envío de 
- *la información por MQTT a un servidor preseleccionado 
- *usando DeepSleep para minimizar consumo
+/*
+  Código para lectura de un tanque de agua y envío de
+  la información por MQTT a un servidor preseleccionado
+  usando DeepSleep para minimizar consumo
 */
 
-#include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
+#include <FS.h>                   //this needs to be first, or it all crashes and burns...
+
+#include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+#include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include <ESP8266HTTPUpdateServer.h>
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
+#include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <PubSubClient.h>
+#include <NeoDigito.h>            //https://github.com/Inventoteca/NeoDigito
 
 // Ajustar de acuerdo a tu red WiFi
 //Modo STA
@@ -24,8 +28,8 @@ const int pintrigger = 5;
 
 //CALIBRACIONES
 //Se utilizan para la funcion PorcentajeDeposito()
-int distMin=17; //Calibrar esto de acuerdo al tamaño del tanque de agua con medidas en cm,
-int distMax=120; //se puede obtener de la lectura del sensor en puerto serial
+int distMin = 17; //Calibrar esto de acuerdo al tamaño del tanque de agua con medidas en cm,
+int distMax = 120; //se puede obtener de la lectura del sensor en puerto serial
 
 unsigned long int tiempo_dormido = 55e6; //tiempo en microsegundos
 
@@ -34,12 +38,6 @@ PubSubClient client(espClient);
 unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE  (50)
 char msg[MSG_BUFFER_SIZE];
-
-//OTA
-const char* host = "esp8266-webupdate";
-ESP8266WebServer httpServer(80);
-ESP8266HTTPUpdateServer httpUpdater;
-
 
 //RTC
 #define RTCMEMORYSTART 65
@@ -61,52 +59,54 @@ void setup() {
   Serial.begin(115200);
   pinMode(pinecho, INPUT); //US
   pinMode(pintrigger, OUTPUT); //US
-  setupWifi();
+  WiFi.mode(WIFI_STA);
+  WiFiManager wm;
+  wm.resetSettings();
+  
+  bool res;
+  res = wm.autoConnect("ConcentradorIoT_SensorAgua", "12345678"); // password protected ap
+
+  if (!res) {
+    Serial.println("Failed to connect");
+    // ESP.restart();
+  }
+  else {
+    //if you get here you have connected to the WiFi
+    Serial.println("connected...yeey :)");
+  }
+  
   //MQTT
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 
-  //OTA
-  MDNS.begin(host);
-  httpUpdater.setup(&httpServer);
-  httpServer.begin();
-  MDNS.addService("http", "tcp", 80);
-  Serial.printf("HTTPUpdateServer ready! Open http://%s.local/update in your browser\n", host);
- 
 }
 
 //----------------------------------------------LOOP---------------------------------------------------------//
 
-void loop() {      
+void loop() {
   //MQTT
   if (!client.connected()) {
     reconnect();
   }
   client.loop();
 
-  //OTA
-  //while(true){
-  httpServer.handleClient(); 
-  MDNS.update();    
-  //}
- 
-  
+
   int porcent = PorcentajeTanque(); //La primer medición es BASURA
   porcent = PorcentajeTanque(); //Repetir medición
-  
-  if(porcent<0 || porcent>600) //Volver a hacer la medición si salió mal
+
+  if (porcent < 0 || porcent > 600) //Volver a hacer la medición si salió mal
   {
     delay(200);
-    porcent = PorcentajeTanque(); 
-    if(porcent<0 || porcent>600) //Volver a hacer la medición si salió mal
-      {
-        delay(200);
-        porcent = PorcentajeTanque(); 
-      }  
+    porcent = PorcentajeTanque();
+    if (porcent < 0 || porcent > 600) //Volver a hacer la medición si salió mal
+    {
+      delay(200);
+      porcent = PorcentajeTanque();
+    }
   }
-  
+
   PrintMediciones(porcent);
-  
+
   //Envío por MQTT
   snprintf (msg, MSG_BUFFER_SIZE, "%ld", porcent);
   Serial.print("Publish message: ");
@@ -116,7 +116,7 @@ void loop() {
   client.publish(topicString, msg);
 
   //Para saber el voltaje de la pila
-  float volt = ESP.getVcc()/1000.0;
+  float volt = ESP.getVcc() / 1000.0;
   Serial.print("Vcc read: ");
   Serial.print(volt);
   Serial.println("V");
@@ -132,42 +132,22 @@ void loop() {
   int str_len = MAC.length() + 1;
   MAC.toCharArray(msg, str_len);
   client.publish("ConcentradorIoT/Alive", msg);
-  
+
   loopCounter++; //Se usa un bucle porque necesitas mandar más de una vez los valores por MQTT para que sí lleguen, aparentemente
 
-  if(loopCounter == 7){
+  if (loopCounter == 7) {
     writeToRTCMemory();
     //Irse a dormir
     Serial.print("a dormir por ");
-    Serial.print(tiempo_dormido/1000000);
+    Serial.print(tiempo_dormido / 1000000);
     Serial.println("s");
-    ESP.deepSleep(tiempo_dormido); //Bye bye  
+    ESP.deepSleep(tiempo_dormido); //Bye bye
   }
 
-  delay(1000);
 }
 
 //----------------------------------------OTRAS FUNCIONES-------------------------------------------------------//
 
-void setupWifi() {
-
-  // Connect to Wi-Fi network with SSID and password
-  Serial.print("Connecting to ");
-  Serial.println(ssidSTA1);
-  WiFi.begin(ssidSTA1, passwordSTA1);
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(100);
-  }
-  
-  // Print local IP address
-  Serial.println("");
-  Serial.println("WiFi conectado.");
-  Serial.println("Direccion IP: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("MAC: ");
-  Serial.println(WiFi.macAddress());
-}
 
 String getValue(String data, char separator, int index) //Para MQTT
 {
@@ -187,24 +167,24 @@ String getValue(String data, char separator, int index) //Para MQTT
 }
 ////Para MQTT
 void callback(char* topic, byte* payload, unsigned int length) { //Recibe los mensajes un caracter a la vez, los une
-//  String message = "";
-//
-//  Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
-//  for (int i = 0; i < length; i++) {
-//    Serial.print((char)payload[i]);
-//    message += (char)payload[i];
-//  }
-//  Serial.println();
-//
-//  String thistopic = String(topic);
-//
-//
-//  if (thistopic == topicString) {
-//
-//    //r = getValue(message, ',', 0); //Separa lo primero hasta la primer coma
-//    //targetBlue = b.toInt();
-//
-//  }
+  //  String message = "";
+  //
+  //  Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
+  //  for (int i = 0; i < length; i++) {
+  //    Serial.print((char)payload[i]);
+  //    message += (char)payload[i];
+  //  }
+  //  Serial.println();
+  //
+  //  String thistopic = String(topic);
+  //
+  //
+  //  if (thistopic == topicString) {
+  //
+  //    //r = getValue(message, ',', 0); //Separa lo primero hasta la primer coma
+  //    //targetBlue = b.toInt();
+  //
+  //  }
 }
 
 void reconnect() {
@@ -227,9 +207,9 @@ void reconnect() {
   }
 }
 
-int PorcentajeTanque(void){
+int PorcentajeTanque(void) {
   unsigned int tiempo;
-  
+
   //Medición ultrasónico
   digitalWrite(pintrigger, LOW);
   delayMicroseconds(2);
@@ -237,23 +217,15 @@ int PorcentajeTanque(void){
   delayMicroseconds(10);
   digitalWrite(pintrigger, LOW);
   tiempo = pulseIn(pinecho, HIGH);
-  distancia = tiempo*0.034/2; //Constante de la velocidad del sonido
-//
-//  Serial.print("time: ");
-//  Serial.print(tiempo); //Imprime la medición actual
-//  Serial.println(" s");
-//  
-//  Serial.print("Mediciooon: ");
-//  Serial.print(distancia); //Imprime la medición actual
-//  Serial.println(" cm");
-  
+  distancia = tiempo * 0.034 / 2; //Constante de la velocidad del sonido
+
   float rango = distMax - distMin;
-  int porcentaje = 100 - (distancia - distMin)*(100/rango);
+  int porcentaje = 100 - (distancia - distMin) * (100 / rango);
   return porcentaje;
-  
+
 }
 
-void PrintMediciones(int x){
+void PrintMediciones(int x) {
 
   Serial.print("Porcentaje actual del tanque: ");
   Serial.print(x);
